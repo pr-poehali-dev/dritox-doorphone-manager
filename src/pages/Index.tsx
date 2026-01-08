@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Progress } from '@/components/ui/progress';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
 
@@ -37,15 +38,30 @@ interface Message {
   timestamp: number;
 }
 
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+  reward: string;
+}
+
 const CITIES = ['Санкт-Петербург', 'Москва', 'Шушары'];
-const BRANDS = ['Cyfral', 'Метаком', 'Vizit', 'Eltis'];
-const PROVIDERS = ['Ростелеком', 'Дом.ру', 'Спутник'];
+const BRANDS = ['Спутник', 'Бевард', 'Элтис', 'Визит'];
+const PROVIDERS = ['Ростелеком', 'Дом.ру', 'Тат Телеком', 'Без провайдера'];
 
 const INTERCOM_IMAGES = [
   'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=300&fit=crop',
   'https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=400&h=300&fit=crop',
   'https://images.unsplash.com/photo-1506869640319-fe1a24fd76dc?w=400&h=300&fit=crop',
   'https://images.unsplash.com/photo-1519125323398-675f0ddb6308?w=400&h=300&fit=crop',
+];
+
+const INITIAL_TASKS: Task[] = [
+  { id: '1', title: 'Добавить 5 домофонов', description: 'Добавьте 5 домофонов в приложение', completed: false, reward: '+30 дней Premium' },
+  { id: '2', title: 'Изменить свои данные', description: 'Отредактируйте имя или телефон в профиле', completed: false, reward: '+7 дней Premium' },
+  { id: '3', title: 'Написать в поддержку', description: 'Отправьте сообщение в чат поддержки', completed: false, reward: '+3 дня Premium' },
+  { id: '4', title: 'Написать соседям', description: 'Отправьте сообщение в чат с жильцами', completed: false, reward: '+3 дня Premium' },
 ];
 
 export default function Index() {
@@ -57,9 +73,12 @@ export default function Index() {
   const [intercoms, setIntercoms] = useState<Intercom[]>([]);
   const [activeSection, setActiveSection] = useState('home');
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [selectedIntercom, setSelectedIntercom] = useState<Intercom | null>(null);
   const [showSantaCall, setShowSantaCall] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
+  const [premiumExpiry, setPremiumExpiry] = useState<number | null>(null);
+  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   
   const [addStep, setAddStep] = useState(1);
   const [newIntercom, setNewIntercom] = useState({
@@ -87,8 +106,17 @@ export default function Index() {
     }
 
     const savedPremium = localStorage.getItem('dritoks_premium');
+    const savedExpiry = localStorage.getItem('dritoks_premium_expiry');
     if (savedPremium === 'true') {
       setIsPremium(true);
+      if (savedExpiry) {
+        setPremiumExpiry(parseInt(savedExpiry));
+      }
+    }
+
+    const savedTasks = localStorage.getItem('dritoks_tasks');
+    if (savedTasks) {
+      setTasks(JSON.parse(savedTasks));
     }
 
     const savedResidentMessages = localStorage.getItem('dritoks_resident_messages');
@@ -101,6 +129,38 @@ export default function Index() {
       setSupportMessages(JSON.parse(savedSupportMessages));
     }
   }, []);
+
+  useEffect(() => {
+    if (premiumExpiry && premiumExpiry < Date.now()) {
+      setIsPremium(false);
+      localStorage.removeItem('dritoks_premium');
+      localStorage.removeItem('dritoks_premium_expiry');
+      toast.error('Premium подписка истекла');
+    }
+  }, [premiumExpiry]);
+
+  const checkAndCompleteTask = (taskId: string) => {
+    const updatedTasks = tasks.map(task => {
+      if (task.id === taskId && !task.completed) {
+        task.completed = true;
+        const days = parseInt(task.reward.match(/\d+/)?.[0] || '0');
+        addPremiumDays(days);
+        toast.success(`Задание выполнено! ${task.reward}`);
+      }
+      return task;
+    });
+    setTasks(updatedTasks);
+    localStorage.setItem('dritoks_tasks', JSON.stringify(updatedTasks));
+  };
+
+  const addPremiumDays = (days: number) => {
+    const currentExpiry = premiumExpiry || Date.now();
+    const newExpiry = currentExpiry + (days * 24 * 60 * 60 * 1000);
+    setPremiumExpiry(newExpiry);
+    setIsPremium(true);
+    localStorage.setItem('dritoks_premium', 'true');
+    localStorage.setItem('dritoks_premium_expiry', newExpiry.toString());
+  };
 
   const handleAuth = () => {
     if (!name.trim() || !phone.trim()) {
@@ -120,6 +180,9 @@ export default function Index() {
         toast.error('Неверный номер телефона');
         return;
       }
+    } else {
+      addPremiumDays(30);
+      toast.success('Пробный период 30 дней активирован! 🎉');
     }
 
     const userData = { name: name.trim(), phone: phone.trim() };
@@ -136,7 +199,7 @@ export default function Index() {
         id: 'demo1',
         name: 'Домофон (Демо)',
         address: { city: 'Санкт-Петербург', house: '1', apartment: '1' },
-        brand: 'Cyfral',
+        brand: 'Спутник',
         provider: 'Ростелеком',
         image: INTERCOM_IMAGES[0]
       }
@@ -158,6 +221,8 @@ export default function Index() {
       localStorage.removeItem('dritoks_user');
       localStorage.removeItem('dritoks_intercoms');
       localStorage.removeItem('dritoks_premium');
+      localStorage.removeItem('dritoks_premium_expiry');
+      localStorage.removeItem('dritoks_tasks');
       localStorage.removeItem('dritoks_resident_messages');
       localStorage.removeItem('dritoks_support_messages');
       setUser(null);
@@ -168,20 +233,37 @@ export default function Index() {
 
   const handleAddIntercomStep = () => {
     if (addStep === 1) {
-      if (!newIntercom.city || !newIntercom.house || !newIntercom.apartment) {
-        toast.error('Заполните все поля адреса');
+      if (!newIntercom.city) {
+        toast.error('Выберите город');
         return;
       }
       setAddStep(2);
     } else if (addStep === 2) {
-      if (!newIntercom.brand) {
-        toast.error('Выберите марку домофона');
+      if (!newIntercom.house) {
+        toast.error('Введите номер дома');
         return;
       }
       setAddStep(3);
     } else if (addStep === 3) {
+      if (!newIntercom.apartment) {
+        toast.error('Введите номер квартиры');
+        return;
+      }
+      setAddStep(4);
+    } else if (addStep === 4) {
+      if (!newIntercom.brand) {
+        toast.error('Выберите марку домофона');
+        return;
+      }
+      setAddStep(5);
+    } else if (addStep === 5) {
       if (!newIntercom.provider) {
         toast.error('Выберите провайдера');
+        return;
+      }
+
+      if (newIntercom.provider === 'Без провайдера') {
+        toast.error('Без провайдера добавить домофон невозможно');
         return;
       }
       
@@ -202,6 +284,9 @@ export default function Index() {
       setIntercoms(updated);
       if (!isDemoMode) {
         localStorage.setItem('dritoks_intercoms', JSON.stringify(updated));
+        if (updated.length >= 5) {
+          checkAndCompleteTask('1');
+        }
       }
       
       setShowAddDialog(false);
@@ -225,8 +310,19 @@ export default function Index() {
     const updated = { name: editUser.name, phone: editUser.phone, email: editUser.email };
     setUser(updated);
     localStorage.setItem('dritoks_user', JSON.stringify(updated));
-    setShowEditProfile(false);
+    setShowEditDialog(false);
+    checkAndCompleteTask('2');
     toast.success('Профиль обновлен');
+  };
+
+  const handleDeleteIntercom = (id: string) => {
+    if (window.confirm('Удалить этот домофон?')) {
+      const updated = intercoms.filter(i => i.id !== id);
+      setIntercoms(updated);
+      localStorage.setItem('dritoks_intercoms', JSON.stringify(updated));
+      setSelectedIntercom(null);
+      toast.success('Домофон удален');
+    }
   };
 
   const sendResidentMessage = () => {
@@ -241,6 +337,7 @@ export default function Index() {
     setResidentMessages(updated);
     localStorage.setItem('dritoks_resident_messages', JSON.stringify(updated));
     setNewMessage('');
+    checkAndCompleteTask('4');
     
     setTimeout(() => {
       const reply: Message = {
@@ -267,6 +364,7 @@ export default function Index() {
     setSupportMessages(updated);
     localStorage.setItem('dritoks_support_messages', JSON.stringify(updated));
     setNewMessage('');
+    checkAndCompleteTask('3');
 
     setTimeout(() => {
       const answers = [
@@ -286,6 +384,11 @@ export default function Index() {
       setSupportMessages(withReply);
       localStorage.setItem('dritoks_support_messages', JSON.stringify(withReply));
     }, 1500);
+  };
+
+  const getDaysLeft = () => {
+    if (!premiumExpiry) return 0;
+    return Math.max(0, Math.ceil((premiumExpiry - Date.now()) / (1000 * 60 * 60 * 24)));
   };
 
   if (!user) {
@@ -386,7 +489,7 @@ export default function Index() {
                 <div>
                   <h2 className="font-bold text-lg">Дритокс</h2>
                   <p className="text-xs text-white/70">{user.name}</p>
-                  {isPremium && <Badge className="mt-1 bg-yellow-500 text-xs">Premium</Badge>}
+                  {isPremium && <Badge className="mt-1 bg-yellow-500 text-xs">{getDaysLeft()}д Premium</Badge>}
                   {isDemoMode && <Badge className="mt-1 bg-blue-500 text-xs">Демо</Badge>}
                 </div>
               </div>
@@ -398,8 +501,7 @@ export default function Index() {
                 { id: 'intercoms', icon: 'DoorOpen', label: 'Домофоны' },
                 { id: 'chats', icon: 'MessageSquare', label: 'Чаты' },
                 { id: 'settings', icon: 'Settings', label: 'Настройки' },
-                { id: 'payment', icon: 'CreditCard', label: 'Оплата' },
-                { id: 'profile', icon: 'User', label: 'Профиль' }
+                { id: 'payment', icon: 'CreditCard', label: 'Оплата' }
               ].map((item) => (
                 <button
                   key={item.id}
@@ -453,7 +555,6 @@ export default function Index() {
                     {activeSection === 'chats' && 'Чаты'}
                     {activeSection === 'settings' && 'Настройки'}
                     {activeSection === 'payment' && 'Оплата'}
-                    {activeSection === 'profile' && 'Профиль'}
                   </h1>
                 </div>
                 
@@ -483,7 +584,11 @@ export default function Index() {
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {intercoms.map((intercom) => (
-                        <Card key={intercom.id} className="hover:shadow-xl transition-all hover-scale border-0 shadow-lg overflow-hidden group">
+                        <Card 
+                          key={intercom.id} 
+                          className="hover:shadow-xl transition-all hover-scale border-0 shadow-lg overflow-hidden group cursor-pointer"
+                          onClick={() => setSelectedIntercom(intercom)}
+                        >
                           <div className="h-2 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500"></div>
                           {intercom.image && (
                             <img src={intercom.image} alt="Камера домофона" className="w-full h-48 object-cover" />
@@ -499,9 +604,6 @@ export default function Index() {
                                   <p className="text-sm text-muted-foreground">Активен</p>
                                 </div>
                               </div>
-                              <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Icon name="MoreVertical" size={20} />
-                              </Button>
                             </div>
                             
                             <div className="space-y-2 text-sm mb-4">
@@ -520,7 +622,10 @@ export default function Index() {
                             </div>
 
                             <Button 
-                              onClick={handleOpenIntercom}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenIntercom();
+                              }}
                               className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 rounded-lg"
                             >
                               <Icon name="Unlock" size={18} className="mr-2" />
@@ -627,12 +732,19 @@ export default function Index() {
               )}
 
               {activeSection === 'payment' && (
-                <div className="max-w-4xl mx-auto">
+                <div className="max-w-4xl mx-auto space-y-6">
                   <Card className="border-0 shadow-2xl overflow-hidden">
                     <div className="bg-gradient-to-r from-yellow-400 via-yellow-500 to-orange-500 p-8 text-center">
                       <Icon name="Crown" size={64} className="mx-auto mb-4 text-white" />
                       <h2 className="text-3xl font-bold text-white mb-2">Premium подписка</h2>
                       <p className="text-white/90">Безграничные возможности управления</p>
+                      {isPremium && (
+                        <div className="mt-4">
+                          <Badge className="bg-white text-yellow-600 text-lg px-4 py-2">
+                            Осталось {getDaysLeft()} дней
+                          </Badge>
+                        </div>
+                      )}
                     </div>
                     <CardContent className="p-8">
                       <div className="space-y-4 mb-8">
@@ -654,38 +766,77 @@ export default function Index() {
                           </div>
                         ))}
                       </div>
-                      <Button 
-                        onClick={() => {
-                          if (isDemoMode) {
-                            toast.error('Демо-режим: подписка недоступна');
-                            return;
-                          }
-                          setIsPremium(true);
-                          localStorage.setItem('dritoks_premium', 'true');
-                          toast.success('Premium подписка активирована!');
-                        }}
-                        disabled={isPremium || isDemoMode}
-                        className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:opacity-90 h-14 text-lg font-bold"
-                      >
-                        {isPremium ? 'Подписка активна' : 'Активировать Premium'}
-                      </Button>
+                      
+                      <div className="space-y-4">
+                        <Button 
+                          onClick={() => {
+                            if (isDemoMode) {
+                              toast.error('Демо-режим: оплата недоступна');
+                              return;
+                            }
+                            addPremiumDays(30);
+                            toast.success('Premium подписка продлена на 30 дней за 1₽!');
+                          }}
+                          disabled={isDemoMode}
+                          className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:opacity-90 h-14 text-lg font-bold"
+                        >
+                          {isPremium ? 'Продлить за 1₽' : 'Подключить за 1₽'}
+                        </Button>
+
+                        <div className="text-center">
+                          <p className="text-sm text-muted-foreground mb-2">или получите бесплатно:</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-0 shadow-lg">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Icon name="Target" size={24} className="text-purple-600" />
+                        Задания для получения Premium
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {tasks.map((task) => (
+                        <div key={task.id} className={`p-4 border rounded-lg ${task.completed ? 'bg-green-50 border-green-200' : ''}`}>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-semibold">{task.title}</h4>
+                                {task.completed && <Icon name="CheckCircle2" size={20} className="text-green-600" />}
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
+                              <Badge className={task.completed ? 'bg-green-500' : 'bg-purple-600'}>
+                                {task.reward}
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </CardContent>
                   </Card>
                 </div>
               )}
 
-              {activeSection === 'profile' && (
-                <div className="max-w-2xl mx-auto">
+              {activeSection === 'settings' && (
+                <div className="max-w-2xl mx-auto space-y-6">
                   <Card className="border-0 shadow-lg">
-                    <CardContent className="p-8">
-                      <div className="flex items-center gap-6 mb-8">
-                        <div className="w-24 h-24 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-xl">
-                          <span className="text-3xl font-bold text-white">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Icon name="User" size={24} className="text-purple-600" />
+                        Профиль
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-6 mb-6">
+                        <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-xl">
+                          <span className="text-2xl font-bold text-white">
                             {user.name.charAt(0).toUpperCase()}
                           </span>
                         </div>
                         <div className="flex-1">
-                          <h2 className="text-3xl font-bold mb-1">{user.name}</h2>
+                          <h2 className="text-2xl font-bold mb-1">{user.name}</h2>
                           <p className="text-muted-foreground">{user.phone}</p>
                           {user.email && <p className="text-sm text-muted-foreground">{user.email}</p>}
                         </div>
@@ -696,7 +847,7 @@ export default function Index() {
                               return;
                             }
                             setEditUser({ name: user.name, phone: user.phone, email: user.email || '' });
-                            setShowEditProfile(true);
+                            setShowEditDialog(true);
                           }}
                           variant="outline"
                           size="icon"
@@ -704,26 +855,6 @@ export default function Index() {
                         >
                           <Icon name="Pencil" size={20} />
                         </Button>
-                      </div>
-
-                      <div className="space-y-4 mb-8">
-                        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
-                          <div className="flex justify-between items-center">
-                            <span className="font-medium">Подписка</span>
-                            <Badge className={isPremium ? 'bg-yellow-500' : 'bg-gray-500'}>
-                              {isPremium ? 'Premium' : 'Базовый план'}
-                            </Badge>
-                          </div>
-                        </div>
-                        
-                        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
-                          <div className="flex justify-between items-center">
-                            <span className="font-medium">Домофонов</span>
-                            <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                              {intercoms.length}
-                            </span>
-                          </div>
-                        </div>
                       </div>
 
                       <div className="space-y-3">
@@ -749,29 +880,29 @@ export default function Index() {
                       </div>
                     </CardContent>
                   </Card>
-                </div>
-              )}
 
-              {activeSection === 'settings' && (
-                <div className="max-w-2xl mx-auto space-y-6">
                   <Card className="border-0 shadow-lg">
                     <CardHeader>
                       <CardTitle>Настройки провайдера</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {intercoms.map((intercom) => (
-                        <div key={intercom.id} className="p-4 border rounded-lg">
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="font-semibold">{intercom.name}</p>
-                              <p className="text-sm text-muted-foreground">{intercom.provider}</p>
+                      {intercoms.length === 0 ? (
+                        <p className="text-center text-muted-foreground">Домофоны не добавлены</p>
+                      ) : (
+                        intercoms.map((intercom) => (
+                          <div key={intercom.id} className="p-4 border rounded-lg">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <p className="font-semibold">{intercom.name}</p>
+                                <p className="text-sm text-muted-foreground">{intercom.provider}</p>
+                              </div>
+                              <Button variant="outline" size="sm" disabled={isDemoMode}>
+                                Изменить
+                              </Button>
                             </div>
-                            <Button variant="outline" size="sm" disabled={isDemoMode}>
-                              Изменить
-                            </Button>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </CardContent>
                   </Card>
 
@@ -825,7 +956,7 @@ export default function Index() {
               <div>
                 <h2 className="font-bold text-lg">Дритокс</h2>
                 <p className="text-xs text-white/70">{user.name}</p>
-                {isPremium && <Badge className="mt-1 bg-yellow-500 text-xs">Premium</Badge>}
+                {isPremium && <Badge className="mt-1 bg-yellow-500 text-xs">{getDaysLeft()}д Premium</Badge>}
               </div>
             </div>
           </div>
@@ -836,8 +967,7 @@ export default function Index() {
               { id: 'intercoms', icon: 'DoorOpen', label: 'Домофоны' },
               { id: 'chats', icon: 'MessageSquare', label: 'Чаты' },
               { id: 'settings', icon: 'Settings', label: 'Настройки' },
-              { id: 'payment', icon: 'CreditCard', label: 'Оплата' },
-              { id: 'profile', icon: 'User', label: 'Профиль' }
+              { id: 'payment', icon: 'CreditCard', label: 'Оплата' }
             ].map((item) => (
               <button
                 key={item.id}
@@ -867,10 +997,16 @@ export default function Index() {
         </SheetContent>
       </Sheet>
 
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog} onOpenChange={(open) => {
+        setShowAddDialog(open);
+        if (!open) {
+          setAddStep(1);
+          setNewIntercom({ city: '', house: '', apartment: '', brand: '', provider: '' });
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Добавить домофон - Шаг {addStep} из 3</DialogTitle>
+            <DialogTitle>Добавить домофон - Шаг {addStep} из 5</DialogTitle>
           </DialogHeader>
 
           {addStep === 1 && (
@@ -888,30 +1024,36 @@ export default function Index() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">Номер дома</label>
-                <Input
-                  placeholder="12"
-                  value={newIntercom.house}
-                  onChange={(e) => setNewIntercom({...newIntercom, house: e.target.value})}
-                  maxLength={2}
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">Номер квартиры</label>
-                <Input
-                  placeholder="45"
-                  value={newIntercom.apartment}
-                  onChange={(e) => setNewIntercom({...newIntercom, apartment: e.target.value})}
-                  maxLength={3}
-                />
-              </div>
             </div>
           )}
 
           {addStep === 2 && (
+            <div className="space-y-4">
+              <label className="text-sm font-medium">Номер дома</label>
+              <Input
+                placeholder="12"
+                value={newIntercom.house}
+                onChange={(e) => setNewIntercom({...newIntercom, house: e.target.value})}
+                maxLength={2}
+                className="text-lg h-14"
+              />
+            </div>
+          )}
+
+          {addStep === 3 && (
+            <div className="space-y-4">
+              <label className="text-sm font-medium">Номер квартиры</label>
+              <Input
+                placeholder="45"
+                value={newIntercom.apartment}
+                onChange={(e) => setNewIntercom({...newIntercom, apartment: e.target.value})}
+                maxLength={3}
+                className="text-lg h-14"
+              />
+            </div>
+          )}
+
+          {addStep === 4 && (
             <div className="space-y-4">
               <label className="text-sm font-medium">Марка домофона</label>
               <div className="grid grid-cols-2 gap-3">
@@ -929,7 +1071,7 @@ export default function Index() {
             </div>
           )}
 
-          {addStep === 3 && (
+          {addStep === 5 && (
             <div className="space-y-4">
               <label className="text-sm font-medium">Провайдер</label>
               <div className="space-y-3">
@@ -954,13 +1096,59 @@ export default function Index() {
               </Button>
             )}
             <Button onClick={handleAddIntercomStep} className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600">
-              {addStep === 3 ? 'Добавить' : 'Далее'}
+              {addStep === 5 ? 'Добавить' : 'Далее'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showEditProfile} onOpenChange={setShowEditProfile}>
+      <Dialog open={selectedIntercom !== null} onOpenChange={(open) => !open && setSelectedIntercom(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Управление домофоном</DialogTitle>
+            <DialogDescription>
+              {selectedIntercom && `${selectedIntercom.address.city}, дом ${selectedIntercom.address.house}, кв. ${selectedIntercom.address.apartment}`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Button
+              onClick={() => {
+                handleOpenIntercom();
+                setSelectedIntercom(null);
+              }}
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 h-14"
+            >
+              <Icon name="Unlock" size={20} className="mr-2" />
+              Открыть домофон
+            </Button>
+            <Button
+              onClick={() => {
+                toast.info('Редактирование домофона');
+                setSelectedIntercom(null);
+              }}
+              variant="outline"
+              className="w-full h-14"
+              disabled={isDemoMode}
+            >
+              <Icon name="Edit" size={20} className="mr-2" />
+              Редактировать
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedIntercom) handleDeleteIntercom(selectedIntercom.id);
+              }}
+              variant="destructive"
+              className="w-full h-14"
+              disabled={isDemoMode}
+            >
+              <Icon name="Trash2" size={20} className="mr-2" />
+              Удалить домофон
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Редактировать профиль</DialogTitle>
